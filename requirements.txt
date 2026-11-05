@@ -3,3 +3,4 @@ uvicorn[standard]>=0.29
 aiohttp>=3.9
 python-dotenv>=1.0
 openai>=1.40  # только для scripts/upload_kb.py (Vector Store API Яндекса)
+tzdata>=2024.1  # база часовых поясов для Windows
