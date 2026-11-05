@@ -1,0 +1,14 @@
+.env
+.venv/
+data/
+__pycache__/
+*.pyc
+.DS_Store
+mock_log.json
+*.zip
+deploy/cloud-init.yaml
+deploy/voicebot_ssh*
+deploy/voicebot-secrets.txt
+deploy/certs/
+deploy/windows/serve.cmd
+deploy/windows/target.env

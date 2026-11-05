@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Голосовой ассистент — демо</title>
+<style>
+  :root{--bg:#f6f8f7;--fg:#14212b;--muted:#5f6f7a;--line:#dde4e8;--card:#fff;--accent:#0b6e4f;--accent-soft:#e3f4ee}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0c1418;--fg:#e8eef2;--muted:#93a3ae;--line:#22303a;--card:#111a20;--accent:#2cc79a;--accent-soft:#143128}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.55}
+  .wrap{max-width:1160px;margin:0 auto;padding:0 24px}
+  nav{display:flex;align-items:center;justify-content:space-between;padding:22px 0}
+  .logo{font-weight:700;font-size:20px;letter-spacing:.3px;display:flex;align-items:center;gap:10px}
+  .logo i{width:28px;height:28px;border-radius:8px;background:var(--accent);display:inline-block;position:relative}
+  .logo i::after{content:"";position:absolute;inset:8px;border:2px solid #fff;border-radius:50%}
+  .badge{font-size:12.5px;font-weight:600;color:var(--accent);background:var(--accent-soft);padding:6px 12px;border-radius:999px}
+  .hero{display:grid;grid-template-columns:1.05fr 1fr;gap:48px;align-items:center;padding:28px 0 56px}
+  h1{font-size:44px;line-height:1.1;margin:0 0 18px;letter-spacing:-.8px}
+  .lead{font-size:18px;color:var(--muted);margin:0 0 28px;max-width:520px}
+  .try{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 20px;max-width:520px}
+  .try h3{margin:0 0 10px;font-size:14px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
+  .try ul{margin:0;padding:0;list-style:none;display:grid;gap:8px}
+  .try li{padding-left:22px;position:relative}
+  .try li::before{content:"“";position:absolute;left:0;top:-4px;font-size:26px;color:var(--accent);font-weight:700}
+  #assistant{height:620px;border-radius:20px;overflow:hidden;border:1px solid var(--line);box-shadow:0 30px 70px rgba(10,40,30,.14)}
+  .feats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:8px 0 64px}
+  .feat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px}
+  .feat b{display:block;margin-bottom:6px}
+  .feat span{color:var(--muted);font-size:14.5px}
+  footer{border-top:1px solid var(--line);padding:22px 0;color:var(--muted);font-size:13.5px}
+  footer a{color:inherit}
+  @media (max-width:900px){.hero{grid-template-columns:1fr;gap:28px}h1{font-size:34px}.feats{grid-template-columns:1fr 1fr}}
+  .badge{white-space:nowrap}
+  @media (max-width:520px){.wrap{padding:0 16px}.badge{font-size:11.5px;padding:5px 10px}.feats{grid-template-columns:1fr}#assistant{height:560px}}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <nav>
+      <div class="logo"><i></i>АУМСОФТ</div>
+      <span class="badge">Демо голосового ИИ-ассистента</span>
+    </nav>
+
+    <section class="hero">
+      <div>
+        <h1>Поверка и калибровка средств измерений</h1>
+        <p class="lead">Ассистент на сайте отвечает на вопросы клиентов голосом и сам записывает на консультацию к метрологу — круглосуточно, без ожидания на линии.</p>
+        <div class="try">
+          <h3>Попробуйте сказать</h3>
+          <ul>
+            <li>Чем поверка отличается от калибровки?</li>
+            <li>Нужно поверить манометры, сколько это займёт?</li>
+            <li>Хочу записаться на консультацию на завтра после обеда</li>
+            <li>Можно, чтобы мне перезвонил менеджер?</li>
+          </ul>
+        </div>
+      </div>
+      <div id="assistant"></div>
+    </section>
+
+    <section class="feats">
+      <div class="feat"><b>Живой диалог</b><span>Распознавание и синтез речи Яндекса, можно перебивать.</span></div>
+      <div class="feat"><b>База знаний</b><span>Отвечает по услугам, срокам и регламентам компании.</span></div>
+      <div class="feat"><b>Запись в расписание</b><span>Видит свободные слоты и бронирует без двойных записей.</span></div>
+      <div class="feat"><b>Подтверждение</b><span>Номер записи, файл для календаря, уведомление менеджеру.</span></div>
+    </section>
+  </div>
+  <footer><div class="wrap">Демонстрационный прототип. Данные о компании условные. · <a href="/admin">Записи (для менеджера)</a></div></footer>
+
+  <script src="/static/widget.js" data-inline="#assistant" defer></script>
+</body>
+</html>

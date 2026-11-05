@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Записи и звонки</title>
+<style>
+  :root{--bg:#f6f8f7;--fg:#14212b;--muted:#5f6f7a;--line:#dde4e8;--card:#fff;--accent:#0b6e4f;--danger:#c2410c}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0c1418;--fg:#e8eef2;--muted:#93a3ae;--line:#22303a;--card:#111a20;--accent:#2cc79a}}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 "Inter",system-ui,sans-serif}
+  .wrap{max-width:1160px;margin:0 auto;padding:24px 16px}
+  h1{font-size:24px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 10px}
+  .muted{color:var(--muted);font-size:13.5px}
+  .tbl{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:14px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12.5px;text-transform:uppercase;letter-spacing:.5px}
+  tr:last-child td{border-bottom:0}
+  .ok{color:var(--accent);font-weight:600}.no{color:var(--danger);font-weight:600}
+  details{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:8px}
+  summary{cursor:pointer}
+  .t{margin:6px 0;font-size:14px}.t b{display:inline-block;min-width:90px;color:var(--muted);font-weight:500}
+  .empty{padding:16px;color:var(--muted)}
+  .cal{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+  .day{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+  .day h3{margin:0 0 8px;font-size:14px}
+  .day h3::first-letter{text-transform:uppercase}
+  .sl{display:flex;gap:8px;align-items:baseline;font-size:13px;padding:3px 0;border-top:1px dashed var(--line)}
+  .sl:first-of-type{border-top:0}
+  .sl b{font-variant-numeric:tabular-nums;min-width:42px}
+  .sl.free span{color:var(--muted)} .sl.past{opacity:.45}
+  .sl.booked span{color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Записи и обращения</h1>
+  <div class="muted">Так видит результат работы ассистента менеджер. Обновляется каждые 5 секунд.</div>
+  <h2>Календарь</h2>
+  <div class="cal" id="cal"></div>
+  <h2>Записи на консультацию</h2>
+  <div class="tbl"><table id="b"><thead><tr><th>Номер</th><th>Когда</th><th>Тема</th><th>Клиент</th><th>Телефон</th><th>Статус</th></tr></thead><tbody></tbody></table></div>
+  <h2>Заявки на обратный звонок</h2>
+  <div class="tbl"><table id="c"><thead><tr><th>Создана</th><th>Клиент</th><th>Телефон</th><th>Тема</th><th>Итог</th></tr></thead><tbody></tbody></table></div>
+  <h2>Разговоры</h2>
+  <div id="conv"></div>
+</div>
+<script>
+const token = new URLSearchParams(location.search).get('token') || '';
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = (iso) => iso ? new Date(iso).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '';
+function rows(el, items, f, n) {
+  el.querySelector('tbody').innerHTML = items.length ? items.map(f).join('') : `<tr><td colspan="${n}" class="empty">Пока пусто</td></tr>`;
+}
+let lastJson = '';
+async function load() {
+  const r = await fetch('/api/admin/data?token=' + encodeURIComponent(token));
+  if (!r.ok) { document.body.innerHTML = '<div class="wrap">Нужен доступ: /admin?token=…</div>'; return; }
+  const raw = await r.text();
+  if (raw === lastJson) return;          // ничего не изменилось — не трогаем страницу
+  lastJson = raw;
+  const d = JSON.parse(raw);
+  // запоминаем раскрытые разговоры, чтобы обновление их не сворачивало
+  const opened = new Set([...document.querySelectorAll('#conv details[open]')].map((x) => x.dataset.id));
+  rows(document.getElementById('b'), d.bookings, (b) => `<tr><td><b>${esc(b.number)}</b></td><td>${esc(b.when)}</td><td>${esc(b.service)}${b.comment ? '<div class="muted">' + esc(b.comment) + '</div>' : ''}</td><td>${esc(b.client_name)}${b.company ? '<div class="muted">' + esc(b.company) + '</div>' : ''}</td><td>${esc(b.phone)}</td><td class="${b.status === 'confirmed' ? 'ok' : 'no'}">${b.status === 'confirmed' ? 'подтверждена' : 'отменена'}</td></tr>`, 6);
+  rows(document.getElementById('c'), d.callbacks, (c) => `<tr><td>${fmt(c.created_at)}</td><td>${esc(c.client_name)}</td><td>${esc(c.phone)}</td><td>${esc(c.topic)}</td><td>${esc(c.summary)}</td></tr>`, 5);
+  document.getElementById('conv').innerHTML = d.conversations.length ? d.conversations.map((c) => {
+    const t = JSON.parse(c.transcript || '[]').filter((x) => x.role !== 'tool');
+    return `<details data-id="${c.id}"${opened.has(String(c.id)) ? ' open' : ''}><summary>${fmt(c.started_at)} · ${t.length} реплик${c.summary ? ' · ' + esc(c.summary) : ''}</summary>${t.map((x) => `<div class="t"><b>${x.role === 'user' ? 'Клиент' : 'Ассистент'}</b>${esc(x.text)}</div>`).join('')}</details>`;
+  }).join('') : '<div class="muted">Пока нет завершённых разговоров</div>';
+}
+let lastCal = '';
+async function loadCal() {
+  const r = await fetch('/api/admin/calendar?token=' + encodeURIComponent(token));
+  if (!r.ok) return;
+  const raw = await r.text(); if (raw === lastCal) return; lastCal = raw;
+  const days = JSON.parse(raw).days;
+  document.getElementById('cal').innerHTML = days.map((d) => `<div class="day"><h3>${esc(d.label)}</h3>${
+    d.slots.map((x) => `<div class="sl ${x.status}"><b>${x.time}</b><span>${
+      x.status === 'booked' ? esc(x.booking.client_name) + ' · ' + esc(x.booking.service) + ' · ' + esc(x.booking.number)
+      : x.status === 'past' ? 'прошло' : 'свободно'}</span></div>`).join('')}</div>`).join('');
+}
+load(); loadCal(); setInterval(() => { load(); loadCal(); }, 5000);
+</script>
+</body>
+</html>

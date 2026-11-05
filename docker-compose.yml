@@ -1,0 +1,19 @@
+# Локальный запуск: docker compose up -d --build  →  http://localhost:8000
+# Секреты берутся из .env (в образ не попадают), записи и разговоры — в ./data
+services:
+  voicebot:
+    build:
+      context: .
+      args:
+        BASE: ${BASE_IMAGE:-python:3.12-slim}
+    env_file: .env
+    environment:
+      PORT: "8000"
+      PUBLIC_BASE_URL: "http://localhost:8000"
+      DB_PATH: /app/data/voicebot.sqlite3
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./kb:/app/kb          # база знаний правится без пересборки
+    restart: unless-stopped

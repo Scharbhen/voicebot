@@ -1,0 +1,11 @@
+[Unit]
+Description=voicebot demo
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/voicebot
+ExecStart=/opt/voicebot/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
