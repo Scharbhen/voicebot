@@ -75,3 +75,8 @@ SMTP_FROM = _env("SMTP_FROM") or SMTP_USER
 MCP_TOKEN = _env("MCP_TOKEN")  # токен для MCP-эндпоинта /mcp (агент в AI Studio)
 ADMIN_TOKEN = _env("ADMIN_TOKEN")  # пусто = без пароля (только для локального демо)
 PUBLIC_BASE_URL = _env("PUBLIC_BASE_URL", "http://localhost:8000")
+# Пароль на виджет (для публикации наружу): вход по ссылке /?key=..., дальше браузер помнит. Пусто = открыт всем.
+ACCESS_KEY = _env("ACCESS_KEY")
+# Лимиты разговоров (защита от расхода минут API): всего в час и с одного адреса в час. 0 = без лимита.
+MAX_SESSIONS_PER_HOUR = int(_env("MAX_SESSIONS_PER_HOUR", "40"))
+MAX_SESSIONS_PER_IP_HOUR = int(_env("MAX_SESSIONS_PER_IP_HOUR", "8"))
