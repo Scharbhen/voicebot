@@ -198,7 +198,9 @@ def normalize_phone(raw: str) -> str | None:
     digits = re.sub(r"\D", "", raw or "")
     if len(digits) == 11 and digits[0] in "78":
         digits = "7" + digits[1:]
-    elif len(digits) == 10:
+    elif len(digits) == 10 and not (digits[0] == "7" or (digits[0] == "8" and digits[1] != "0")):
+        # 10 цифр без кода страны (921…, 812…, 800…). «7 921 123456» / «8 921 123456» — это код страны
+        # и только 9 цифр номера: номер неполный, его нужно переспросить, а не дописывать
         digits = "7" + digits
     else:
         return None
