@@ -17,12 +17,16 @@ $px = Get-Content .env -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Obje
 $Proxy = if ($px) { ($px -split "=", 2)[1].Trim() } else { "" }
 if ($Proxy) { $env:HTTPS_PROXY = $Proxy; $env:HTTP_PROXY = $Proxy }
 
-function Git { & git -c safe.directory=* @args; if ($LASTEXITCODE -ne 0) { throw "git $($args -join ' ') завершился с ошибкой" } }
+# git вызываем по полному пути к git.exe. Функцию нельзя называть «Git»: PowerShell не различает регистр,
+# и вызов git внутри неё уходил в бесконечную рекурсию.
+$GitExe = (Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+if (-not $GitExe) { Log "не найден git.exe"; exit 1 }
+function Invoke-Git { & $GitExe -c safe.directory=* @args; if ($LASTEXITCODE -ne 0) { throw "git $($args -join ' ') завершился с ошибкой" } }
 
-try { Git fetch --quiet origin } catch { Log "нет связи с GitHub: $_"; exit 1 }
-$branch = (& git -c safe.directory=* rev-parse --abbrev-ref HEAD).Trim()
-$old = (& git -c safe.directory=* rev-parse HEAD).Trim()
-$new = (& git -c safe.directory=* rev-parse "origin/$branch").Trim()
+try { Invoke-Git fetch --quiet origin } catch { Log "нет связи с GitHub: $_"; exit 1 }
+$branch = (& $GitExe -c safe.directory=* rev-parse --abbrev-ref HEAD).Trim()
+$old = (& $GitExe -c safe.directory=* rev-parse HEAD).Trim()
+$new = (& $GitExe -c safe.directory=* rev-parse "origin/$branch").Trim()
 if ($old -eq $new -and -not $Force) { exit 0 }
 # коммит, который уже не запустился, повторно не ставим (пока не появится новый или не запущено с -Force)
 $BadFile = Join-Path $Root "data\bad_commit"
@@ -53,7 +57,7 @@ function Healthy {
 }
 function Apply($rev) {
   $reqBefore = (Get-FileHash requirements.txt).Hash
-  Git reset --quiet --hard $rev
+  Invoke-Git reset --quiet --hard $rev
   if ((Get-FileHash requirements.txt).Hash -ne $reqBefore) {
     Log "изменились зависимости — устанавливаю"
     if (-not (Install-Deps)) { Log "pip завершился с ошибкой"; return $false }
@@ -61,7 +65,7 @@ function Apply($rev) {
   return $true
 }
 
-$msg = (& git -c safe.directory=* log -1 --format="%h %s" $new)
+$msg = (& $GitExe -c safe.directory=* log -1 --format="%h %s" $new)
 Log "обновление $($old.Substring(0,7)) → $msg"
 Stop-Bot
 $ok = Apply $new
