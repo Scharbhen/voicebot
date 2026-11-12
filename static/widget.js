@@ -117,6 +117,7 @@
   function setStatus(s, text) { statusEl.textContent = text || STATUS[s] || s; }
   function scroll() { logEl.scrollTop = logEl.scrollHeight; }
   function clearEmpty() { const e = $('.vb-empty'); if (e) e.remove(); }
+  let lastUser = null;
   function addMsg(role, text) {
     clearEmpty();
     const d = document.createElement('div');
@@ -344,7 +345,10 @@
           if (agentBubble) agentBubble.textContent += ' …';
           agentBubble = null; break;
         }
-        case 'user_text': addMsg('user', m.text); break;
+        case 'user_text':
+          // продолжение прерванной фразы приходит целиком — заменяем прежний пузырь, а не добавляем новый
+          if (m.replace && lastUser) { lastUser.textContent = m.text; scroll(); } else lastUser = addMsg('user', m.text);
+          break;
         case 'agent_start': agentBubble = null; segs = []; break;
         case 'agent_delta':
           if (!agentBubble) agentBubble = addMsg('agent', '');

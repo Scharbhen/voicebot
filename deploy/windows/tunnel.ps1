@@ -1,7 +1,7 @@
 ﻿# Публикация бота наружу через Tuna (tuna.am). Запуск (PowerShell от администратора, в C:\voicebot):
 #   powershell -ExecutionPolicy Bypass -File deploy\windows\tunnel.ps1 -ApiKey tak_...
 #   необязательно: -Subdomain имя   — постоянный адрес имя.ru.tuna.am (зарезервируйте его в кабинете Tuna)
-# Скрипт скачивает клиент Tuna, включает пароль на виджет, регистрирует автозапуск туннеля
+# Скрипт скачивает клиент Tuna, регистрирует автозапуск туннеля
 # (задача «Voicebot-Tunnel») и печатает ссылку для клиента. Повторный запуск безопасен.
 param([string]$ApiKey = "", [string]$Subdomain = "")
 $ErrorActionPreference = "Stop"
@@ -56,15 +56,6 @@ if (-not $Tuna) {
 }
 Write-Host $Tuna.FullName
 
-# ---------- пароль на виджет ----------
-Step "Пароль на виджет"
-$Access = Get-EnvVar "ACCESS_KEY"
-if (-not $Access) {
-  $Access = -join ((48..57) + (97..122) | Get-Random -Count 10 | ForEach-Object { [char]$_ })
-  Set-EnvVar "ACCESS_KEY" $Access
-}
-Write-Host "включён"
-
 # ---------- запуск туннеля ----------
 Step "Туннель → https://localhost:$Port"
 $Log = Join-Path $Root "data\tunnel.log"
@@ -110,7 +101,7 @@ if (-not $Url) {
 }
 Set-EnvVar "PUBLIC_BASE_URL" $Url
 
-# бот перечитывает .env только при старте — перезапускаем, чтобы включились пароль и внешний адрес
+# бот перечитывает .env только при старте — перезапускаем, чтобы подхватился внешний адрес
 Step "Перезапускаю бота"
 Stop-ScheduledTask -TaskName "Voicebot" -ErrorAction SilentlyContinue
 Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
@@ -128,6 +119,6 @@ $tok = Get-EnvVar "ADMIN_TOKEN"
 Write-Host ""
 if ($ok) { Write-Host "ГОТОВО — бот доступен снаружи" -ForegroundColor Green }
 else { Write-Host "Туннель поднят, но бот через него пока не ответил — проверьте data\tunnel.log и data\server.log" -ForegroundColor Yellow }
-Write-Host "  Ссылка для клиента:  $Url/?key=$Access"
+Write-Host "  Ссылка для клиента:  $Url"
 Write-Host "  Страница менеджера:  $Url/admin?token=$tok"
 if (-not $Subdomain) { Write-Host "  Адрес временный и сменится при перезапуске. Постоянный: зарезервируйте поддомен в кабинете Tuna и запустите скрипт с -Subdomain имя" -ForegroundColor Yellow }

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import re
 import logging
 import time
 
@@ -182,6 +183,34 @@ class Bridge:
         await self.y({"type": "conversation.item.truncate", "item_id": item_id,
                       "content_index": 0, "audio_end_ms": ms})
 
+    @staticmethod
+    def _norm(t: str) -> str:
+        return " ".join(re.sub(r"[^\w\s]", " ", t.lower().replace("ё", "е")).split())
+
+    async def _user_text(self, text: str, item_id: str | None) -> None:
+        """Реплика клиента. Если клиент сделал паузу посреди фразы, Яндекс присылает её частями,
+        и каждая следующая часть содержит предыдущую («запиши меня…», «запиши меня… меня зовут Вася»).
+        Такую реплику считаем продолжением: прежнюю убираем из истории модели, чтобы та видела фразу один раз."""
+        norm, now = self._norm(text), time.time()
+        prev = getattr(self, "_last_user", None)
+        texts = self.ctx.setdefault("user_texts", [])
+        if prev and now - prev["t"] < 90 and len(prev["norm"]) >= 8:
+            cut = prev["norm"][:max(8, int(len(prev["norm"]) * 0.8))]
+            if norm.startswith(cut) and len(norm) >= len(prev["norm"]):
+                log.info("continuation of previous user turn — replacing it")
+                if prev.get("item"):
+                    await self.y({"type": "conversation.item.delete", "item_id": prev["item"]})
+                self.transcript[prev["idx"]]["text"] = text
+                if texts:
+                    texts[-1] = text
+                self._last_user = {**prev, "norm": norm, "item": item_id, "t": now}
+                await self.ui({"type": "user_text", "text": text, "replace": True})
+                return
+        texts.append(text)
+        self.transcript.append({"role": "user", "text": text, "t": round(now)})
+        self._last_user = {"norm": norm, "item": item_id, "t": now, "idx": len(self.transcript) - 1}
+        await self.ui({"type": "user_text", "text": text})
+
     async def barge(self, data: dict) -> None:
         """Клиент перебил ассистента (определил браузер): отменяем ответ и обрезаем непрозвучавшее."""
         self.epoch += 1
@@ -255,9 +284,7 @@ class Bridge:
             elif et == "conversation.item.input_audio_transcription.completed":
                 text = (ev.get("transcript") or "").strip()
                 if text:
-                    self.ctx.setdefault("user_texts", []).append(text)
-                    self.transcript.append({"role": "user", "text": text, "t": round(time.time())})
-                    await self.ui({"type": "user_text", "text": text})
+                    await self._user_text(text, ev.get("item_id"))
 
             elif et == "response.created":
                 self.response_epoch = self.epoch
@@ -311,7 +338,7 @@ class Bridge:
                 err = ev.get("error") or {}
                 msg_text = err.get("message") or str(ev)[:300]
                 low = json.dumps(ev, ensure_ascii=False).lower()
-                if "truncat" in low or "cancel" in low:
+                if "truncat" in low or "cancel" in low or "delete" in low:
                     continue  # если сервер не поддерживает truncate — не пугаем клиента, только лог
                 await self.ui({"type": "error", "message": msg_text})
 
