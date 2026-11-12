@@ -262,6 +262,12 @@ def phone_from_speech(texts: list[str]) -> str | None:
     return None
 
 
+def phone_groups(p: str) -> str:
+    """Номер для чтения вслух группами: «плюс 7, 812, 123, 45, 67»."""
+    d = p.lstrip("+")
+    return f"плюс {d[0]}, {d[1:4]}, {d[4:7]}, {d[7:9]}, {d[9:11]}" if len(d) == 11 else p
+
+
 def pretty_phone(p: str) -> str:
     d = p.lstrip("+")
     return f"+{d[0]} ({d[1:4]}) {d[4:7]}-{d[7:9]}-{d[9:11]}" if len(d) == 11 else p
