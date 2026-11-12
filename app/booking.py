@@ -262,6 +262,35 @@ def phone_from_speech(texts: list[str]) -> str | None:
     return None
 
 
+_NOT_NAME = set(_UNITS) | set(_TEENS) | set(_TENS) | set(_HUNDREDS) | {
+    "телефон", "номер", "мой", "моя", "плюс", "запиши", "запишите", "и", "а", "на", "я", "хочу", "мне", "по", "из",
+    "завтра", "сегодня", "привет", "здравствуйте", "нужна", "нужно", "можно", "пожалуйста", "к", "в", "с", "у"}
+_TOPIC_RE = re.compile(r"(поверк|проверк|калибровк|аттестац|ремонт|настройк)[а-яё]*\s+([а-яё]{4,})(\s+[а-яё]{4,})?")
+_TOPIC_HEAD = {"поверк": "поверка", "проверк": "поверка", "калибровк": "калибровка", "аттестац": "аттестация",
+               "ремонт": "ремонт", "настройк": "настройка"}
+
+
+def fields_from_speech(texts: list[str]) -> dict:
+    """Имя, телефон и тема из реплик клиента (как распознал Яндекс). Сервер хранит их сам,
+    чтобы запись не зависела от того, что модель запомнила или забыла."""
+    out: dict = {}
+    phone = phone_from_speech(texts)
+    if phone:
+        out["phone"] = phone
+    for t in reversed(texts):
+        low = (t or "").lower().replace("ё", "е")
+        if "name" not in out:
+            m = re.search(r"(?:меня зовут|мое имя|зовут меня)\s+([а-яе]+)(?:\s+([а-яе]+))?", low)
+            if m and m.group(1) not in _NOT_NAME:
+                parts = [m.group(1)] + ([m.group(2)] if m.group(2) and m.group(2) not in _NOT_NAME else [])
+                out["name"] = " ".join(w.capitalize() for w in parts)
+        if "topic" not in out:
+            m = _TOPIC_RE.search(low)
+            if m and m.group(2) not in _NOT_NAME:
+                out["topic"] = f"{_TOPIC_HEAD[m.group(1)]} {m.group(2)}"
+    return out
+
+
 def phone_groups(p: str) -> str:
     """Номер для чтения вслух группами: «плюс 7, 812, 123, 45, 67»."""
     d = p.lstrip("+")

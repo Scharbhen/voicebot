@@ -26,6 +26,10 @@ REALTIME_URL = _env("REALTIME_URL") or (
     f"wss://ai.api.cloud.yandex.net/v1/realtime?model=gpt://{YANDEX_FOLDER_ID}/{REALTIME_MODEL}"
 )
 
+# Текстовая модель, которая в момент записи достаёт из разговора имя, телефон и тему. Пусто = только разбор по словам.
+EXTRACT_MODEL = _env("EXTRACT_MODEL", "yandexgpt/latest")
+EXTRACT_URL = _env("EXTRACT_URL", "https://ai.api.cloud.yandex.net/v1/chat/completions")
+
 # --- Голос и аудио ---
 VOICE = _env("VOICE")  # пусто = голос модели по умолчанию (для LiveTTS-модели подходят только LiveTTS-голоса)
 VOICE_ROLE = _env("VOICE_ROLE")  # например "good"; пусто = по умолчанию

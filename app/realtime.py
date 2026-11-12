@@ -32,7 +32,7 @@ class Bridge:
         self.session_id = ""
         self.started_at = booking.now().isoformat(timespec="seconds")
         self.transcript: list[dict] = []
-        self.ctx: dict = {}
+        self.ctx: dict = {"transcript": self.transcript}
         # «эпохи» нужны, чтобы после перебивания не доигрывать хвост старого ответа
         self.epoch = 0
         self.response_epoch: int | None = None
@@ -190,7 +190,8 @@ class Bridge:
     async def _user_text(self, text: str, item_id: str | None) -> None:
         """Реплика клиента. Если клиент сделал паузу посреди фразы, Яндекс присылает её частями,
         и каждая следующая часть содержит предыдущую («запиши меня…», «запиши меня… меня зовут Вася»).
-        Такую реплику считаем продолжением: прежнюю убираем из истории модели, чтобы та видела фразу один раз."""
+        Такую реплику считаем продолжением: в чате и в журнале заменяем прежнюю. Историю модели не трогаем —
+        она слушает звук, и в прежнем куске могли быть имя и телефон."""
         norm, now = self._norm(text), time.time()
         prev = getattr(self, "_last_user", None)
         texts = self.ctx.setdefault("user_texts", [])
@@ -198,8 +199,6 @@ class Bridge:
             cut = prev["norm"][:max(8, int(len(prev["norm"]) * 0.8))]
             if norm.startswith(cut) and len(norm) >= len(prev["norm"]):
                 log.info("continuation of previous user turn — replacing it")
-                if prev.get("item"):
-                    await self.y({"type": "conversation.item.delete", "item_id": prev["item"]})
                 self.transcript[prev["idx"]]["text"] = text
                 if texts:
                     texts[-1] = text
@@ -279,9 +278,11 @@ class Bridge:
 
             elif et == "input_audio_buffer.speech_stopped":
                 self.ctx["user_turns"] = self.ctx.get("user_turns", 0) + 1
+                self.pending_tr = getattr(self, "pending_tr", 0) + 1  # ждём расшифровку этой реплики
                 await self.ui({"type": "status", "state": "thinking"})
 
             elif et == "conversation.item.input_audio_transcription.completed":
+                self.pending_tr = max(0, getattr(self, "pending_tr", 0) - 1)
                 text = (ev.get("transcript") or "").strip()
                 if text:
                     await self._user_text(text, ev.get("item_id"))
@@ -323,7 +324,13 @@ class Bridge:
             elif et == "response.output_item.done":
                 item = ev.get("item") or {}
                 if item.get("type") == "function_call":
-                    await self.handle_function_call(item)
+                    if item.get("name") == "book_appointment" and getattr(self, "pending_tr", 0) > 0:
+                        # Яндекс присылает расшифровку реплики позже, чем модель начинает отвечать. Запись берёт имя
+                        # и телефон из расшифровки — дожидаемся её (до 2,5 с), не блокируя приём событий.
+                        self.resp_had_call = True
+                        asyncio.create_task(self._call_after_transcript(item))
+                    else:
+                        await self.handle_function_call(item)
 
             elif et == "response.done":
                 self.speaking = False
@@ -343,6 +350,16 @@ class Bridge:
                 await self.ui({"type": "error", "message": msg_text})
 
         log.info("yandex ws closed")
+
+    async def _call_after_transcript(self, item: dict) -> None:
+        for _ in range(25):
+            if getattr(self, "pending_tr", 0) <= 0:
+                break
+            await asyncio.sleep(0.1)
+        try:
+            await self.handle_function_call(item)
+        except Exception:  # noqa: BLE001
+            log.exception("deferred tool call failed")
 
     async def handle_function_call(self, item: dict) -> None:
         name = item.get("name", "")

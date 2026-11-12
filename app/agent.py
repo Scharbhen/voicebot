@@ -5,7 +5,7 @@ import json
 import re
 from typing import Any, Awaitable, Callable
 
-from . import booking, config, notify
+from . import extract, booking, config, notify
 
 # ---------- база знаний ----------
 
@@ -49,20 +49,16 @@ def build_instructions() -> str:
 
 ЗАПИСЬ НА КОНСУЛЬТАЦИЮ — порядок
 1. Клиент хочет записаться → сразу вызови get_available_slots (с датой, если он её назвал).
-   Если клиент уже назвал конкретное время и оно есть в ответе — сразу подтверди именно его, не предлагай выбор.
+   Если клиент уже назвал конкретное время и оно есть в ответе — это и есть выбранное время: сразу шаг 2, без вопросов.
    Если названного времени нет или клиент время не назвал — предложи два-три варианта из ответа.
    Если ему подходит любое время — предложи ближайший. Даты и время бери только из ответа функции.
-2. Когда время выбрано, узнай тему консультации, если клиент её ещё не назвал. Тема, названная в любой реплике
-   («по поводу поверки манометров») или понятная из разговора (спрашивал про поверку манометров, потом «хочу записаться»),
-   уже известна — не переспрашивай и не уточняй её. Не хочет уточнять — «Консультация».
-3. Спроси имя и телефон. Имя записывай ровно так, как назвал клиент («Вася» — значит «Вася»): не превращай его
-   в полное, не додумывай отчество и фамилию. Не расслышала — переспроси. Дослушай номер до конца, не перебивай и не комментируй, пока клиент диктует.
-   Когда клиент закончил, НЕ задавай отдельный вопрос про номер и сама не решай, полный ли он, — сразу переходи к шагу 4.
-4. Когда есть время, имя и телефон — вызови book_appointment. Функция вернёт, что зачитать клиенту для проверки:
-   зачитай одной фразой и спроси «всё верно?». Клиент согласился — вызови book_appointment ещё раз с теми же данными.
-   Поправил — вызови с исправленными. Своё «подтверждаете?» до вызова функции НЕ спрашивай: подтверждение одно — то, что вернула функция.
-5. Только когда функция вернула ok, скажи, что клиент записан, назови номер записи и скажи, что подтверждение на экране.
-   Если вернулась ошибка — спроси только то, чего не хватает.
+2. Как только время выбрано — СРАЗУ вызови book_appointment, ничего не уточняя и не подтверждая.
+   Сервер сам помнит всё, что клиент сказал за разговор (имя, телефон, тему), даже если ты это пропустила.
+   Передай то, что знаешь; чего не знаешь — оставь пустым.
+3. Функция вернула «не хватает» — спроси только это одним вопросом и вызови её снова.
+   Дослушай номер до конца, не перебивай. Сама не решай, полный ли номер, — это проверит функция.
+4. Функция вернула ok — произнеси её say: там время и номер телефона для проверки. Подтверждений не спрашивай.
+   Клиент поправил что-то после записи — вызови book_appointment ещё раз с исправленным, запись заменится.
 Не задавай вопросы из следующих шагов раньше времени и не переспрашивай то, что клиент уже сказал.
 
 ДРУГОЕ
@@ -118,9 +114,9 @@ def tool_schemas() -> list[dict]:
         ),
         _fn(
             "book_appointment",
-            ("Записать клиента на консультацию. Вызывай сразу, как только известны время, имя и телефон, — "
-             "без своего предварительного подтверждения: функция сама вернёт, что зачитать клиенту, "
-             "и запишет только после его ответа. Телефон передавай как услышала, даже если сомневаешься, — функция проверит."),
+            ("Записать клиента на консультацию. Вызывай сразу, как только выбрано время, без подтверждений. "
+             "Имя, телефон и тему сервер знает из речи клиента сам; передай, что помнишь, остальное оставь пустым. "
+             "Повторный вызов в том же разговоре заменяет запись (для исправлений)."),
             {
                 "slot_id": {"type": "string", "description": "slot_id из ответа get_available_slots"},
                 "client_name": {"type": "string", "description": "Имя и фамилия ровно как назвал клиент (например «Вася Куролесов»), не сокращай"},
@@ -129,7 +125,7 @@ def tool_schemas() -> list[dict]:
                 "company": {"type": "string", "description": "Организация клиента, если назвал"},
                 "comment": {"type": "string", "description": "Важные детали из разговора"},
             },
-            ["slot_id", "client_name", "phone", "service"],
+            ["slot_id"],
         ),
         _fn(
             "cancel_appointment",
@@ -176,54 +172,52 @@ async def run_tool(name: str, args: dict[str, Any], emit: Emit, ctx: dict) -> di
         return booking.available_slots(args.get("date") or None, args.get("part_of_day") or None)
 
     if name == "book_appointment":
-        # Записываем только после того, как клиент услышал время, имя и номер и ответил.
-        # Первый вызов с новыми данными ничего не записывает — возвращает текст для подтверждения.
-        # Номер берём из распознанной речи клиента: модель путает цифры, пересказывая их
-        heard = booking.phone_from_speech(ctx.get("user_texts", [])[-6:])
-        if heard and booking.normalize_phone(args.get("phone", "")) != heard:
-            args = {**args, "phone": heard}
-        chk = booking.check(args.get("slot_id", ""), args.get("client_name", ""), args.get("phone", ""))
-        if not chk.get("ok"):
-            return chk
-        key = (chk["slot"], chk["name"].lower(), chk["phone"])
-        turns = ctx.get("user_turns", 0)
-        pend = ctx.get("pending_booking")
-        # Ассистент уже сам зачитал данные с вопросом «верно?», и клиент после этого ответил — второй раз не спрашиваем
-        la_text, la_turn = ctx.get("last_agent", ("", turns))
-        la = la_text.lower()
-        # …и зачитанный номер совпадает с тем, что будет записано (последние 7 цифр)
-        la_digits = "|".join([re.sub(r"\D", "", la)] + booking._num_runs(la))
-        said_back = (la_turn < turns and chk["name"].lower()[:4] in la
-                     and chk["phone"][-7:] in la_digits
-                     and any(w in la for w in ("верно", "подтвер", "правильно")))
-        confirmed = said_back or (pend and pend["key"] == key and pend["turn"] < turns)
-        if not confirmed:
-            ctx["pending_booking"] = {"key": key, "turn": turns}
-            return {"ok": False, "need_confirmation": True,
-                    "say": f"Проверю: {chk['label']}, {chk['name']}, телефон {booking.phone_groups(chk['phone'])}. Всё верно?",
-                    "instruction": ("Ещё не записано. Произнеси say и жди ответа. Подтвердил — вызови book_appointment "
-                                    "ещё раз с теми же данными; поправил — вызови с исправленными. "
-                                    "Если время в say не то, что просил клиент, — объясни почему (обед, занято, вне приёма).")}
-        ctx.pop("pending_booking", None)
-        res = booking.book(
-            slot=args.get("slot_id", ""),
-            client_name=args.get("client_name", ""),
-            phone=args.get("phone", ""),
-            service=args.get("service", "Консультация"),
-            company=args.get("company", "") or "",
-            comment=args.get("comment", "") or "",
-            channel=ctx.get("channel", "web"),
-        )
-        if res.get("ok"):
-            b = res["booking"]
-            ctx.setdefault("bookings", []).append(b["number"])
-            await emit({"type": "booking", "booking": b})
-            await notify.booking_created(b)
-            confirm = ("Подтверждение показано на экране." if ctx.get("channel", "web") == "web"
-                       else "Менеджер свяжется для подтверждения накануне.")
-            return {"ok": True, "booking_number": b["number"], "when": b["when"],
-                    "say": f"Запись оформлена, номер {b['number']}. {confirm}"}
-        return res
+        # Данные берём в первую очередь из того, что клиент сказал сам (сервер хранит это весь разговор):
+        # модель забывает поля и путает цифры. Подтверждений нет — записываем сразу, номер называем после записи.
+        # Имя и тему из разговора достаёт текстовая модель (понимает любые формулировки); разбор по словам — запас.
+        # Телефон: цифры из распознанной речи собирает код (модели путают цифры), модель — если код не нашёл.
+        by_words = booking.fields_from_speech(ctx.get("user_texts", []))
+        by_model = await extract.extract(ctx.get("transcript", []))
+        known = {**by_words, **{k: v for k, v in by_model.items() if k != "phone"}}
+        phone = (by_words.get("phone") or booking.normalize_phone(by_model.get("phone", ""))
+                 or booking.normalize_phone(args.get("phone", "")) or "")
+        name_arg = (args.get("client_name") or "").strip()
+        kn = known.get("name", "")
+        client = kn or name_arg
+        topic_arg = (args.get("service") or "").strip()
+        topic = known.get("topic") or topic_arg or "Консультация"
+        missing = [w for w, v in (("имя", client), ("телефон", phone)) if not v]
+        if missing:
+            have = ", ".join(f"{k} — {v}" for k, v in (("имя", client), ("телефон", booking.pretty_phone(phone) if phone else "")) if v)
+            return {"ok": False, "instruction": f"Не хватает: {', '.join(missing)}. Спроси ТОЛЬКО это одним вопросом"
+                                                + (f" (уже известно: {have} — не переспрашивай)." if have else ".")}
+        # Клиент поправил данные после записи — заменяем прежнюю запись этого разговора
+        prev = ctx.get("last_booking")
+        if prev:
+            booking.cancel(prev["number"], prev["phone"])
+        new = dict(slot=args.get("slot_id", "") or (prev or {}).get("slot", ""), client_name=client, phone=phone,
+                   service=topic, company=args.get("company", "") or "", comment=args.get("comment", "") or "",
+                   channel=ctx.get("channel", "web"))
+        res = booking.book(**new)
+        if not res.get("ok"):
+            if prev:  # новая не прошла — возвращаем прежнюю
+                back = booking.book(**prev["args"])
+                if back.get("ok"):
+                    ctx["last_booking"] = {**prev, "number": back["booking"]["number"], "booking": back["booking"]}
+                    await emit({"type": "booking", "booking": back["booking"]})
+            return res
+        b = res["booking"]
+        if prev:
+            await emit({"type": "booking_cancelled", "booking": prev["booking"]})
+        ctx["last_booking"] = {"number": b["number"], "phone": phone, "slot": new["slot"], "args": new, "booking": b}
+        ctx.setdefault("bookings", []).append(b["number"])
+        await emit({"type": "booking", "booking": b})
+        await notify.booking_created(b)
+        return {"ok": True, "booking_number": b["number"], "when": b["when"],
+                "say": (f"{'Исправила' if prev else 'Записала вас'}: {b['when']}, {client}. "
+                        f"Телефон для связи — {booking.phone_groups(phone)}. Если в номере ошибка, скажите."),
+                "instruction": "Произнеси say. Больше ничего не спрашивай. Если клиент поправит номер, имя или время — "
+                               "вызови book_appointment ещё раз, запись заменится."}
 
     if name == "cancel_appointment":
         res = booking.cancel(args.get("booking_number", ""), args.get("phone", ""))
