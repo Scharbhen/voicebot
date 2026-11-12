@@ -186,9 +186,10 @@ def available_slots(on_date: str | None = None, part_of_day: str | None = None, 
     return {
         "note": note,
         "slots": slots,
-        "hint": ("Если клиент назвал конкретное время и его нет в slots — прямо скажи, что на это время записи нет "
-                 f"(приём с {config.WORK_START_HOUR} до {config.WORK_END_HOUR}), и предложи ближайшие варианты. "
-                 "Никогда не подставляй другое время молча. Для записи используй slot_id."),
+        "hint": ("Если клиент назвал конкретное время и его нет в slots — прямо скажи почему и предложи ближайшие варианты: "
+                 f"вне приёма (приём по будням с {config.WORK_START_HOUR} до {config.WORK_END_HOUR})"
+                 + (f", обеденный перерыв (с {config.LUNCH_HOUR} до {config.LUNCH_HOUR + 1})" if config.LUNCH_HOUR >= 0 else "")
+                 + " или уже занято. Никогда не подставляй другое время молча. Для записи используй slot_id."),
     }
 
 
